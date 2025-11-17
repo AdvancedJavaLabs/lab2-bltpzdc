@@ -12,6 +12,7 @@
 #include <stdexcept>
 #include <cctype>
 #include <algorithm>
+#include <unordered_set>
 
 inline std::vector<std::string> getAllSections(pqxx::connection& conn, const std::vector<int>& sectionIds)
 {
@@ -210,6 +211,59 @@ inline std::vector<std::pair<size_t, std::string>> splitSentences(const std::str
     return sentences;
 }
 
+inline messages::ResultMessage tonality(pqxx::connection& conn, const messages::TaskMessage& task)
+{
+    static const std::unordered_set<std::string> positiveWords = {
+        "good", "great", "excellent", "wonderful", "amazing", "fantastic", "beautiful",
+        "happy", "joy", "love", "like", "best", "better", "perfect", "brilliant",
+        "positive", "success", "win", "victory", "hope", "bright", "cheerful",
+        "delight", "pleasure", "enjoy", "satisfaction", "pleased", "glad", "nice"
+    };
+    
+    static const std::unordered_set<std::string> negativeWords = {
+        "bad", "terrible", "awful", "horrible", "worst", "hate", "dislike",
+        "sad", "angry", "fear", "worry", "problem", "difficult", "hard",
+        "negative", "failure", "lose", "defeat", "despair", "dark", "gloomy",
+        "pain", "suffering", "disappointment", "disgust", "horror", "evil", "wrong"
+    };
+    
+    auto sects = getAllSections(conn, task.sectionIds);
+    
+    int positiveCount = 0;
+    int negativeCount = 0;
+    
+    for ( const auto& sect : sects ) {
+        auto words = extractWords(sect);
+        for ( const auto& word : words ) {
+            if ( positiveWords.find(word) != positiveWords.end() ) {
+                positiveCount++;
+            } else if ( negativeWords.find(word) != negativeWords.end() ) {
+                negativeCount++;
+            }
+        }
+    }
+    
+    std::string tonalityResult;
+    if ( positiveCount > negativeCount * 1.2 ) {
+        tonalityResult = "positive";
+    } else if ( negativeCount > positiveCount * 1.2 ) {
+        tonalityResult = "negative";
+    } else {
+        tonalityResult = "neutral";
+    }
+    
+    std::ostringstream resultStr;
+    resultStr << tonalityResult << " (positive: " << positiveCount 
+              << ", negative: " << negativeCount << ")";
+    
+    messages::ResultMessage result;
+    result.type = messages::Type::Tonality;
+    result.result = resultStr.str();
+    result.sectionsCount = static_cast<int>(task.sectionIds.size());
+    
+    return result;
+}
+
 inline messages::ResultMessage sortSentences(pqxx::connection& conn, const messages::TaskMessage& task)
 {
     auto sects = getAllSections(conn, task.sectionIds);
@@ -237,6 +291,7 @@ inline messages::ResultMessage sortSentences(pqxx::connection& conn, const messa
 static inline const std::unordered_map<messages::Type, handler_t> handlers = {
     { messages::Type::WordsCount, countWords },
     { messages::Type::TopN, topN },
+    { messages::Type::Tonality, tonality },
     { messages::Type::SortSentences, sortSentences },
 };
 

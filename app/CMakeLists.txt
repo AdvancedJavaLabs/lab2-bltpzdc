@@ -48,7 +48,15 @@ target_compile_options(worker PRIVATE
     ${LIBPQXX_CFLAGS_OTHER}
 )
 
-set_target_properties(loader splitter worker PROPERTIES
+add_executable(aggregator aggregator/main.cpp)
+target_link_libraries(aggregator ${RABBITMQ_LIBRARIES})
+target_include_directories(aggregator PRIVATE 
+    ${RABBITMQ_INCLUDE_DIRS}
+    ${COMMON_INCLUDE_DIR}
+)
+target_compile_options(aggregator PRIVATE ${RABBITMQ_CFLAGS_OTHER})
+
+set_target_properties(loader splitter worker aggregator PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
 )
 

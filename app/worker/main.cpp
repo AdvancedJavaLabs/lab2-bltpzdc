@@ -3,16 +3,16 @@
 #include <iostream>
 #include <pqxx/connection.hxx>
 #include <string>
-#include <signal.h>
+#include <csignal>
 
 #include "constants.hpp"
 #include "handlers.hpp"
 #include "messages.hpp"
 #include "rabbitmq.hpp"
 
-static volatile sig_atomic_t run = 1;
+static volatile int run = 1;
 
-void stop(int sig) {
+static void stop(int sig) {
     run = 0;
 }
 
@@ -39,12 +39,18 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     
+    if ( not rmq.declareQueue(RESULTS_QUEUE_NAME) ) {
+        std::cerr << "Error: Cannot declare results queue" << std::endl;
+        return 1;
+    }
+    
     if ( not rmq.startConsuming(QUEUE_NAME) ) {
         std::cerr << "Error: Cannot start consuming" << std::endl;
         return 1;
     }
     
     std::cout << "Worker started. Subscribed to queue: " << QUEUE_NAME << std::endl;
+    std::cout << "Results will be sent to queue: " << RESULTS_QUEUE_NAME << std::endl;
     std::cout << "Waiting for tasks..." << std::endl;
     
     while ( run ) {
@@ -52,7 +58,7 @@ int main(int argc, char* argv[]) {
         
         if ( rmq.receiveMessage(message, 1) ) {
             std::cout << "Received message: " << message << std::endl;
-            messages::TaskMessage task = messages::TaskMessage::fromJson(message);
+            auto task = messages::TaskMessage::fromJson(message);
             
             std::cout << "----------------------------------------" << std::endl;
             std::cout << "Received task:" << std::endl;
@@ -72,7 +78,16 @@ int main(int argc, char* argv[]) {
             std::cout << "----------------------------------------" << std::endl;
             if ( auto handler = handlers::handlers.find(task.type); handler != handlers::handlers.end() ) {
                 auto result = (handler->second)(conn, task);
+                result.taskId = task.taskId;
                 result.totalSections = task.totalSections;
+                result.n = task.n;
+                
+                std::string resultJson = result.toJson();
+                if ( rmq.sendMessage(resultJson, RESULTS_QUEUE_NAME) ) {
+                    std::cout << "Result sent to aggregator (task " << result.taskId << ")" << std::endl;
+                } else {
+                    std::cerr << "Error: Failed to send result to aggregator" << std::endl;
+                }
                 
                 if ( result.type == messages::Type::WordsCount ) {
                     std::cout << "Word count: " << std::get<size_t>(result.result) << std::endl;
@@ -82,6 +97,8 @@ int main(int argc, char* argv[]) {
                     for ( const auto& [count, word] : topWords ) {
                         std::cout << "  " << word << ": " << count << std::endl;
                     }
+                } else if ( result.type == messages::Type::Tonality ) {
+                    std::cout << "Tonality: " << std::get<std::string>(result.result) << std::endl;
                 } else if ( result.type == messages::Type::SortSentences ) {
                     std::cout << "Sorted sentences (by length):" << std::endl;
                     auto sentences = std::get<std::vector<std::pair<size_t, std::string>>>(result.result);
