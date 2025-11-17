@@ -1,19 +1,12 @@
 #include <iostream>
 #include <fstream>
-#include <iterator>
-#include <vector>
-#include <string>
 #include <filesystem>
 #include <pqxx/pqxx>
 #include <algorithm>
 
-namespace fs = std::filesystem;
+#include "constants.hpp"
 
-const std::string DB_HOST = "localhost";
-const std::string DB_PORT = "5432";
-const std::string DB_NAME = "textdb";
-const std::string DB_USER = "user";
-const std::string DB_PASSWORD = "password";
+namespace fs = std::filesystem;
 
 std::vector<std::string> splitByParagraphs(const std::string& content) {
     std::vector<std::string> paragraphs;
@@ -102,13 +95,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     
-    std::string connString = "host=" + DB_HOST + 
-                             " port=" + DB_PORT + 
-                             " dbname=" + DB_NAME + 
-                             " user=" + DB_USER + 
-                             " password=" + DB_PASSWORD;
-    
-    pqxx::connection conn(connString);
+    pqxx::connection conn(DB_CONN_STRING);
     if ( not conn.is_open() ) {
         std::cerr << "Error: Cannot connect to database" << std::endl;
         return 1;
