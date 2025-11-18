@@ -32,7 +32,7 @@ public:
 
         connection_ = amqp_new_connection();
         socket_ = amqp_tcp_socket_new(connection_);
-        if ( socket_ == nullptr ) {
+        if ( not socket_ ) {
             amqp_destroy_connection(connection_);
             connection_ = nullptr;
             return false;
@@ -151,7 +151,7 @@ public:
             
             amqp_basic_ack(connection_, 1, delivery_tag, 0);
             return true;
-        } else if ( reply.reply_type == AMQP_RESPONSE_LIBRARY_EXCEPTION &&
+        } else if ( reply.reply_type == AMQP_RESPONSE_LIBRARY_EXCEPTION and
                     reply.library_error == AMQP_STATUS_TIMEOUT ) { return false; }
         
         return false;

@@ -56,7 +56,15 @@ target_include_directories(aggregator PRIVATE
 )
 target_compile_options(aggregator PRIVATE ${RABBITMQ_CFLAGS_OTHER})
 
-set_target_properties(loader splitter worker aggregator PROPERTIES
+add_executable(sinker sinker/main.cpp)
+target_link_libraries(sinker ${RABBITMQ_LIBRARIES})
+target_include_directories(sinker PRIVATE 
+    ${RABBITMQ_INCLUDE_DIRS}
+    ${COMMON_INCLUDE_DIR}
+)
+target_compile_options(sinker PRIVATE ${RABBITMQ_CFLAGS_OTHER})
+
+set_target_properties(loader splitter worker aggregator sinker PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
 )
 

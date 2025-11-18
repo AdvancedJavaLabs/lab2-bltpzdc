@@ -1,9 +1,11 @@
 #include <iostream>
 #include <csignal>
 #include <algorithm>
+#include <sstream>
 
 #include "aggregators.hpp"
 #include "constants.hpp"
+#include "messages.hpp"
 #include "rabbitmq.hpp"
 
 static volatile int run = 1;
@@ -30,38 +32,9 @@ static std::optional<messages::ResultMessage> aggregateResults(std::vector<messa
 
         return result;
     } else {
-        std::cerr << "Error: can't find aggregator for type " << messages::TaskMessage::typeToString(type);
+        std::cerr << "Error: can't find aggregator for type " << messages::typeToString(type);
         return {};
     }
-}
-
-void printAggregatedResult(const messages::ResultMessage& result)
-{
-    std::cout << "========================================" << std::endl;
-    std::cout << "AGGREGATED RESULT FOR TASK " << result.taskId << std::endl;
-    std::cout << "Type: " << messages::TaskMessage::typeToString(result.type) << std::endl;
-    std::cout << "Sections processed: " << result.sectionsCount << " / " << result.totalSections << std::endl;
-    std::cout << "----------------------------------------" << std::endl;
-
-    if ( result.type == messages::Type::WordsCount ) {
-        std::cout << "Total word count: " << std::get<size_t>(result.result) << std::endl;
-    } else if ( result.type == messages::Type::TopN ) {
-        const auto& topWords = std::get<std::vector<std::pair<size_t, std::string>>>(result.result);
-        std::cout << "Top " << topWords.size() << " words:" << std::endl;
-        for ( const auto& [count, word] : topWords ) {
-            std::cout << "  " << word << ": " << count << std::endl;
-        }
-    } else if ( result.type == messages::Type::Tonality ) {
-        std::cout << "Tonality: " << std::get<std::string>(result.result) << std::endl;
-    } else if ( result.type == messages::Type::SortSentences ) {
-        const auto& sentences = std::get<std::vector<std::pair<size_t, std::string>>>(result.result);
-        std::cout << "Sorted sentences (by length, descending):" << std::endl;
-        for ( const auto& [length, sentence] : sentences ) {
-            std::cout << "  [" << length << "] " << sentence << std::endl;
-        }
-    }
-
-    std::cout << "========================================" << std::endl;
 }
 
 int main(int argc, char* argv[]) {
@@ -80,13 +53,17 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    if ( not rmq.declareQueue(SINKER_QUEUE_NAME) ) {
+        std::cerr << "Error: Cannot declare sinker queue" << std::endl;
+        return 1;
+    }
+
     if ( not rmq.startConsuming(RESULTS_QUEUE_NAME) ) {
         std::cerr << "Error: Cannot start consuming" << std::endl;
         return 1;
     }
 
-    std::cout << "Aggregator started. Subscribed to queue: " << RESULTS_QUEUE_NAME << std::endl;
-    std::cout << "Waiting for results..." << std::endl;
+    std::cout << "Aggregator started." << std::endl;
 
     std::unordered_map<int, std::vector<messages::ResultMessage>> taskResults;
 
@@ -95,9 +72,6 @@ int main(int argc, char* argv[]) {
 
         if ( rmq.receiveMessage(message, 1) ) {
             auto result = messages::ResultMessage::fromJson(message);
-            
-            std::cout << "Received result for task " << result.taskId 
-                      << " (" << result.sectionsCount << " sections)" << std::endl;
 
             taskResults[result.taskId].push_back(result);
 
@@ -109,13 +83,11 @@ int main(int argc, char* argv[]) {
             if ( totalSectionsReceived >= result.totalSections ) {
                 auto aggregated = aggregateResults(taskResults[result.taskId]);
                 if ( aggregated ) {
-                    printAggregatedResult(*aggregated);
+                    auto resultJson = aggregated->toJson();
+                    rmq.sendMessage(resultJson, SINKER_QUEUE_NAME);
                 }
 
                 taskResults.erase(result.taskId);
-            } else {
-                std::cout << "  Progress: " << totalSectionsReceived 
-                          << " / " << result.totalSections << " sections" << std::endl;
             }
         }
     }

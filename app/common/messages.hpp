@@ -1,12 +1,10 @@
 #pragma once
 
-#include <cstddef>
 #include <optional>
-#include <string>
 #include <variant>
 #include <vector>
-#include <sstream>
 #include <unordered_map>
+#include <string>
 
 namespace messages {
 
@@ -18,29 +16,29 @@ enum class Type : uint8_t {
     Unknown,
 };
 
-struct TaskMessage {
-    static inline const std::unordered_map<Type, std::string> stringTypes = {
+inline const std::unordered_map<Type, std::string> stringTypes = {
         {Type::WordsCount, "words_count"},
         {Type::TopN, "top_n"},
         {Type::Tonality, "tonality"},
         {Type::SortSentences, "sort_sentences"},
-    };
+};
 
-    static inline const std::unordered_map<std::string, Type> typeStrings = {
+inline const std::unordered_map<std::string, Type> typeStrings = {
         { "words_count", Type::WordsCount},
         { "top_n", Type::TopN},
         { "tonality", Type::Tonality},
         { "sort_sentences", Type::SortSentences},
-    };
+};
 
-    static std::string typeToString(Type type) {
-        return stringTypes.find(type) != stringTypes.end() ? stringTypes.at(type) : "unknown";
-    }
+static std::string typeToString(Type type) {
+    return stringTypes.find(type) != stringTypes.end() ? stringTypes.at(type) : "unknown";
+}
 
-    static Type stringToType(const std::string& str) {
-        return typeStrings.find(str) != typeStrings.end() ? typeStrings.at(str) : Type::Unknown;
-    }
+static Type stringToType(const std::string& str) {
+    return typeStrings.find(str) != typeStrings.end() ? typeStrings.at(str) : Type::Unknown;
+}
 
+struct TaskMessage {
     int taskId{0};
     Type type{Type::Unknown};
     std::vector<int> sectionIds{};
@@ -159,7 +157,7 @@ struct ResultMessage {
         std::string unescaped;
         unescaped.reserve(str.length());
         for ( size_t i = 0; i < str.length(); ++i ) {
-            if ( str[i] == '\\' && i + 1 < str.length() ) {
+            if ( str[i] == '\\' and i + 1 < str.length() ) {
                 switch ( str[i + 1] ) {
                     case '"': unescaped += '"'; ++i; break;
                     case '\\': unescaped += '\\'; ++i; break;
@@ -180,13 +178,11 @@ struct ResultMessage {
             if ( json[i] == '"' ) {
                 size_t backslashCount = 0;
                 size_t j = i - 1;
-                while ( j >= start && json[j] == '\\' ) {
-                    backslashCount++;
-                    j--;
+                while ( j >= start and json[j] == '\\' ) {
+                    ++backslashCount;
+                    --j;
                 }
-                if ( backslashCount % 2 == 0 ) {
-                    return i;
-                }
+                if ( backslashCount % 2 == 0 ) { return i; }
             }
         }
         return std::string::npos;
@@ -197,7 +193,7 @@ struct ResultMessage {
         std::ostringstream json;
         json << "{";
         json << "\"task_id\":" << taskId << ",";
-        json << "\"type\":\"" << TaskMessage::typeToString(type) << "\",";
+        json << "\"type\":\"" << typeToString(type) << "\",";
         json << "\"sections_count\":" << sectionsCount << ",";
         json << "\"total_sections\":" << totalSections;
         if ( n ) {
@@ -251,7 +247,7 @@ struct ResultMessage {
                 size_t valueEnd = json.find('\"', valueStart + 1);
                 if ( valueEnd != std::string::npos ) {
                     std::string typeStr = json.substr(valueStart + 1, valueEnd - valueStart - 1);
-                    result.type = TaskMessage::stringToType(typeStr);
+                    result.type = stringToType(typeStr);
                 }
             }
         }

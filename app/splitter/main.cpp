@@ -1,7 +1,9 @@
-#include <cstdint>
+#include <chrono>
+#include <iomanip>
 #include <iostream>
 #include <optional>
 #include <pqxx/pqxx>
+#include <sstream>
 #include <string>
 
 #include "constants.hpp"
@@ -10,7 +12,7 @@
 
 static int taskIdCounter = 1;
 
-void listTexts(pqxx::connection& conn, RabbitMQ&, const std::string&, std::istringstream&) {
+static void listTexts(pqxx::connection& conn, RabbitMQ&, const std::string&, std::istringstream&) {
     pqxx::work txn(conn);
     
     auto result = txn.exec("SELECT name FROM texts ORDER BY name");
@@ -19,7 +21,7 @@ void listTexts(pqxx::connection& conn, RabbitMQ&, const std::string&, std::istri
     }
 }
 
-std::vector<int> getSectionIds(pqxx::connection& conn, const std::string& textName) {
+static std::vector<int> getSectionIds(pqxx::connection& conn, const std::string& textName) {
     std::vector<int> sectionIds;
     sectionIds.reserve(128);
     pqxx::work txn(conn);
@@ -39,15 +41,13 @@ std::vector<int> getSectionIds(pqxx::connection& conn, const std::string& textNa
     return sectionIds;
 }
 
-void createTask(pqxx::connection& dbConn, RabbitMQ& rmq, const std::string& strCmd, std::istringstream& iss) {
+static void createTask(pqxx::connection& dbConn, RabbitMQ& rmq, const std::string& strCmd, std::istringstream& iss) {
     int taskId = taskIdCounter++;
-    auto taskType = messages::TaskMessage::stringToType(strCmd);
+    auto taskType = messages::stringToType(strCmd);
 
     std::optional<int64_t> n;
     if ( taskType == messages::Type::TopN ) {
-        if (std::string strN; (iss >> strN) ) {
-            n = std::stoi(strN);
-        }
+        if (std::string strN; (iss >> strN) ) { n = std::stoi(strN); }
     }
 
     std::string textName;
@@ -65,8 +65,18 @@ void createTask(pqxx::connection& dbConn, RabbitMQ& rmq, const std::string& strC
     
     int totalSections = sectionIds.size();
     
-    std::cout << "Starting task " << taskId << " for text: " << textName << std::endl;
-    std::cout << "Total sections: " << totalSections << std::endl;
+    auto startTime = std::chrono::system_clock::now();
+    auto timeT = std::chrono::system_clock::to_time_t(startTime);
+    auto* tmPtr = std::localtime(&timeT);
+    
+    std::ostringstream timeStr;
+    timeStr << std::put_time(tmPtr, "%Y-%m-%d %H:%M:%S");
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        startTime.time_since_epoch()) % 1000;
+    timeStr << "." << std::setfill('0') << std::setw(3) << ms.count();
+    
+    std::cout << "[TASK START] Task " << taskId << " started at " << timeStr.str() 
+              << " for text: " << textName << std::endl;
     
     for ( size_t i = 0; i < sectionIds.size(); i += BATCH_SIZE ) {
         messages::TaskMessage msg;
@@ -75,26 +85,15 @@ void createTask(pqxx::connection& dbConn, RabbitMQ& rmq, const std::string& strC
         msg.totalSections = totalSections;
         msg.n = n;
         
-        for ( size_t j = i; j < i + BATCH_SIZE && j < sectionIds.size(); ++j ) {
+        for ( size_t j = i; j < i + BATCH_SIZE and j < sectionIds.size(); ++j ) {
             msg.sectionIds.push_back(sectionIds[j]);
         }
         
-        if ( rmq.sendMessage(msg.toJson(), QUEUE_NAME) ) {
-            std::cout << "Sent batch: " << msg.sectionIds.size() << " sections (IDs: ";
-            for (size_t k = 0; k < msg.sectionIds.size(); ++k) {
-                if (k > 0) std::cout << ", ";
-                std::cout << msg.sectionIds[k];
-            }
-            std::cout << ")" << std::endl;
-        } else {
-            std::cerr << "Failed to send batch to RabbitMQ" << std::endl;
-        }
+        rmq.sendMessage(msg.toJson(), QUEUE_NAME);
     }
-    
-    std::cout << "Task " << taskId << " completed" << std::endl;
 }
 
-void printUsage() {
+static void printUsage() {
     std::cout << "Usage:" << std::endl;
     std::cout << "  list                    - List all texts" << std::endl;
     std::cout << "  words_count <text_name> - Count words in a text" << std::endl;
@@ -119,8 +118,6 @@ int main() {
         return 1;
     }
     
-    std::cout << "Connected to PostgreSQL database" << std::endl;
-    
     RabbitMQ rmq;
     if ( not rmq.connect(RABBITMQ_HOST, RABBITMQ_PORT, RABBITMQ_USER, RABBITMQ_PASSWORD) ) {
         std::cerr << "Error: Cannot connect to RabbitMQ" << std::endl;
@@ -132,10 +129,8 @@ int main() {
         return 1;
     }
     
-    std::cout << "Connected to RabbitMQ broker" << std::endl;
-
     std::string line;
-    while (std::cout << "> " && std::getline(std::cin, line)) {
+    while (std::cout << "> " and std::getline(std::cin, line)) {
         std::istringstream iss(line);
         std::string cmd;
         iss >> cmd;

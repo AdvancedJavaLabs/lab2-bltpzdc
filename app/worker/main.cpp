@@ -49,33 +49,14 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     
-    std::cout << "Worker started. Subscribed to queue: " << QUEUE_NAME << std::endl;
-    std::cout << "Results will be sent to queue: " << RESULTS_QUEUE_NAME << std::endl;
-    std::cout << "Waiting for tasks..." << std::endl;
+    std::cout << "Worker started." << std::endl;
     
     while ( run ) {
         std::string message;
         
         if ( rmq.receiveMessage(message, 1) ) {
-            std::cout << "Received message: " << message << std::endl;
             auto task = messages::TaskMessage::fromJson(message);
             
-            std::cout << "----------------------------------------" << std::endl;
-            std::cout << "Received task:" << std::endl;
-            std::cout << "  Task ID: " << task.taskId << std::endl;
-            std::cout << "  Task type: " << messages::TaskMessage::typeToString(task.type) << std::endl;
-            std::cout << "  Section IDs: [";
-            for (size_t i = 0; i < task.sectionIds.size(); ++i) {
-                if (i > 0) std::cout << ", ";
-                std::cout << task.sectionIds[i];
-            }
-            std::cout << "]" << std::endl;
-            std::cout << "  Total sections in task: " << task.totalSections << std::endl;
-            std::cout << "  Batch size: " << task.sectionIds.size() << std::endl;
-            if ( task.n ) {
-                std::cout << "  N: " << *task.n << std::endl;
-            }
-            std::cout << "----------------------------------------" << std::endl;
             if ( auto handler = handlers::handlers.find(task.type); handler != handlers::handlers.end() ) {
                 auto result = (handler->second)(conn, task);
                 result.taskId = task.taskId;
@@ -83,36 +64,11 @@ int main(int argc, char* argv[]) {
                 result.n = task.n;
                 
                 std::string resultJson = result.toJson();
-                if ( rmq.sendMessage(resultJson, RESULTS_QUEUE_NAME) ) {
-                    std::cout << "Result sent to aggregator (task " << result.taskId << ")" << std::endl;
-                } else {
-                    std::cerr << "Error: Failed to send result to aggregator" << std::endl;
-                }
-                
-                if ( result.type == messages::Type::WordsCount ) {
-                    std::cout << "Word count: " << std::get<size_t>(result.result) << std::endl;
-                } else if ( result.type == messages::Type::TopN ) {
-                    auto& topWords = std::get<std::vector<std::pair<size_t, std::string>>>(result.result);
-                    std::cout << "Top " << topWords.size() << " words:" << std::endl;
-                    for ( const auto& [count, word] : topWords ) {
-                        std::cout << "  " << word << ": " << count << std::endl;
-                    }
-                } else if ( result.type == messages::Type::Tonality ) {
-                    std::cout << "Tonality: " << std::get<std::string>(result.result) << std::endl;
-                } else if ( result.type == messages::Type::SortSentences ) {
-                    std::cout << "Sorted sentences (by length):" << std::endl;
-                    auto sentences = std::get<std::vector<std::pair<size_t, std::string>>>(result.result);
-                    for ( const auto& sentence : sentences ) {
-                        std::cout << sentence.first << " " << sentence.second << std::endl;
-                    }
-                }
-            } else {
-                std::cerr << "Error: can't find handler for task with type " << messages::TaskMessage::typeToString(task.type) << std::endl;
+                rmq.sendMessage(resultJson, RESULTS_QUEUE_NAME);
             }
         }
     }
     
     std::cout << "Shutting down worker..." << std::endl;
-    
     return 0;
 }

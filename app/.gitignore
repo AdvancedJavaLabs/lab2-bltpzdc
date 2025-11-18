@@ -1,6 +1,7 @@
 .vscode/
 build/
 .cache/
+texts/
 
 CMakeCache.txt
 CMakeFiles/

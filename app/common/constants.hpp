@@ -19,5 +19,6 @@ inline const std::string RABBITMQ_USER = "guest";
 inline const std::string RABBITMQ_PASSWORD = "guest";
 inline const std::string QUEUE_NAME = "text-processing-tasks";
 inline const std::string RESULTS_QUEUE_NAME = "text-processing-results";
+inline const std::string SINKER_QUEUE_NAME = "text-processing-final-results";
 
-inline const int BATCH_SIZE = 10;
+inline const int BATCH_SIZE = 256;

@@ -1,24 +1,14 @@
 #pragma once
 
 #include "messages.hpp"
-#include "constants.hpp"
-#include <pqxx/connection.hxx>
 #include <pqxx/pqxx>
 
-#include <unordered_map>
-#include <vector>
-#include <string>
-#include <sstream>
-#include <stdexcept>
-#include <cctype>
 #include <algorithm>
 #include <unordered_set>
 
 inline std::vector<std::string> getAllSections(pqxx::connection& conn, const std::vector<int>& sectionIds)
 {
-    if ( sectionIds.empty() ) {
-        return {};
-    }
+    if ( sectionIds.empty() ) { return {}; }
     
     pqxx::work txn(conn);
     
@@ -27,7 +17,7 @@ inline std::vector<std::string> getAllSections(pqxx::connection& conn, const std
     
     std::string arrayStr = "{";
     for ( size_t i = 0; i < sectionIds.size(); ++i ) {
-        if ( i > 0 ) arrayStr += ",";
+        if ( i > 0 ) { arrayStr += ","; }
         arrayStr += std::to_string(sectionIds[i]);
     }
     arrayStr += "}";
@@ -56,7 +46,7 @@ inline size_t countWordsInText(const std::string& text)
     bool inWord = false;
     
     for ( char c : text ) {
-        if ( std::isspace(c) || std::iscntrl(c) ) {
+        if ( std::isspace(c) or std::iscntrl(c) ) {
             if ( inWord ) {
                 ++wordCount;
                 inWord = false;
@@ -94,26 +84,24 @@ inline std::vector<std::string> extractWords(const std::string& text)
     std::string currentWord;
     
     for ( char c : text ) {
-        if ( std::isalnum(c) || c == '\'' || c == '-' ) {
+        if ( std::isalnum(c) or c == '\'' or c == '-' ) {
             currentWord += std::tolower(c);
         } else {
-            if ( !currentWord.empty() ) {
+            if ( not currentWord.empty() ) {
                 words.push_back(currentWord);
                 currentWord.clear();
             }
         }
     }
     
-    if ( !currentWord.empty() ) {
-        words.push_back(currentWord);
-    }
+    if ( not currentWord.empty() ) { words.push_back(currentWord); }
     
     return words;
 }
 
 inline messages::ResultMessage topN(pqxx::connection& conn, const messages::TaskMessage& task)
 {
-    if ( !task.n || *task.n <= 0 ) {
+    if ( not task.n or *task.n <= 0 ) {
         messages::ResultMessage result;
         result.type = messages::Type::TopN;
         result.result = std::vector<std::pair<size_t, std::string>>{};
@@ -127,7 +115,7 @@ inline messages::ResultMessage topN(pqxx::connection& conn, const messages::Task
     for ( const auto& sect : sects ) {
         auto words = extractWords(sect);
         for ( const auto& word : words ) {
-            if ( !word.empty() ) {
+            if ( not word.empty() ) {
                 wordCounts[word]++;
             }
         }
@@ -163,19 +151,17 @@ inline messages::ResultMessage topN(pqxx::connection& conn, const messages::Task
 
 inline std::vector<std::pair<size_t, std::string>> splitSentences(const std::string& text)
 {
-    std::vector<std::pair<size_t, std::string>> sentences;
-    if ( text.empty() ) {
-        return sentences;
-    }
+    if ( text.empty() ) { return {}; }
     
+    std::vector<std::pair<size_t, std::string>> sentences;
     std::string current;
     for ( size_t i = 0; i < text.length(); ++i ) {
         char c = text[i];
         current += c;
         
-        if ( c == '.' || c == '!' || c == '?' ) {
-            if ( i + 1 >= text.length() || std::isspace(text[i + 1]) || 
-                 (i + 2 < text.length() && std::isupper(text[i + 2])) ) {
+        if ( c == '.' or c == '!' or c == '?' ) {
+            if ( i + 1 >= text.length() or std::isspace(text[i + 1]) or 
+                 (i + 2 < text.length() and std::isupper(text[i + 2])) ) {
                 std::string trimmed = current;
                 size_t first = trimmed.find_first_not_of(" \t\n\r");
                 if ( first != std::string::npos ) {
@@ -184,7 +170,7 @@ inline std::vector<std::pair<size_t, std::string>> splitSentences(const std::str
                     if ( last != std::string::npos ) {
                         trimmed = trimmed.substr(0, last + 1);
                     }
-                    if ( !trimmed.empty() ) {
+                    if ( not trimmed.empty() ) {
                         sentences.emplace_back(std::pair{trimmed.size(), std::move(trimmed)});
                     }
                 }
@@ -193,7 +179,7 @@ inline std::vector<std::pair<size_t, std::string>> splitSentences(const std::str
         }
     }
     
-    if ( !current.empty() ) {
+    if ( not current.empty() ) {
         std::string trimmed = current;
         size_t first = trimmed.find_first_not_of(" \t\n\r");
         if ( first != std::string::npos ) {
@@ -202,7 +188,7 @@ inline std::vector<std::pair<size_t, std::string>> splitSentences(const std::str
             if ( last != std::string::npos ) {
                 trimmed = trimmed.substr(0, last + 1);
             }
-            if ( !trimmed.empty() ) {
+            if ( not trimmed.empty() ) {
                 sentences.push_back(std::pair{trimmed.size(), std::move(trimmed)});
             }
         }
@@ -294,6 +280,5 @@ static inline const std::unordered_map<messages::Type, handler_t> handlers = {
     { messages::Type::Tonality, tonality },
     { messages::Type::SortSentences, sortSentences },
 };
-
     
 }
