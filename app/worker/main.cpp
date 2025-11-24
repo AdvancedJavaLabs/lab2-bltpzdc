@@ -56,16 +56,26 @@ int main(int argc, char* argv[]) {
         
         if ( rmq.receiveMessage(message, 1) ) {
             auto task = messages::TaskMessage::fromJson(message);
-            
-            if ( auto handler = handlers::handlers.find(task.type); handler != handlers::handlers.end() ) {
-                auto result = (handler->second)(conn, task);
-                result.taskId = task.taskId;
-                result.totalSections = task.totalSections;
-                result.n = task.n;
-                
-                std::string resultJson = result.toJson();
-                rmq.sendMessage(resultJson, RESULTS_QUEUE_NAME);
+            // std::cout << "Got message with id=" << task.taskId << std::endl
+            //     << "total_sections=" << task.totalSections << std::endl
+            //     << "start_time=" << task.startTime << std::endl
+            //     << "sectionIds=[";
+            // for ( auto sectionId : task.sectionIds ) {
+            //     std::cout << sectionId << ",";
+            // }
+            // std::cout << "]" << std::endl;
+            auto sections = getAllSections(conn, task.sectionIds);
+            messages::ResultMessage result;
+            result.taskId = task.taskId;
+            result.sectionsCount = sections.size();
+            result.totalSections = task.totalSections;
+            result.startTime = task.startTime; 
+
+            for ( auto handler : handlers::handlers ) {
+                handler(sections, result);
             }
+            // std::cout << result.toJson() << std::endl;
+            rmq.sendMessage(result.toJson(), RESULTS_QUEUE_NAME);
         }
     }
     

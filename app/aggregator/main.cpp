@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <sstream>
 
-#include "aggregators.hpp"
+// #include "aggregators.hpp"
 #include "constants.hpp"
 #include "messages.hpp"
 #include "rabbitmq.hpp"
@@ -14,28 +14,28 @@ static void stop(int sig) {
     run = 0;
 }
 
-static std::optional<messages::ResultMessage> aggregateResults(std::vector<messages::ResultMessage>& results)
-{
-    if ( results.empty() ) { return {}; }
+// static std::optional<messages::ResultMessage> aggregateResults(std::vector<messages::ResultMessage>& results)
+// {
+//     if ( results.empty() ) { return {}; }
 
-    auto type = results[0].type;
-    if ( auto aggregator = aggregators::aggregators.find(type); aggregator != aggregators::aggregators.end() ) {
-        auto result = (aggregator->second)(results);
-        result.taskId = results[0].taskId;
-        result.type = results[0].type;
-        result.totalSections = results[0].totalSections;
-        result.sectionsCount = 0;
+//     auto type = results[0].type;
+//     if ( auto aggregator = aggregators::aggregators.find(type); aggregator != aggregators::aggregators.end() ) {
+//         auto result = (aggregator->second)(results);
+//         result.taskId = results[0].taskId;
+//         result.type = results[0].type;
+//         result.totalSections = results[0].totalSections;
+//         result.sectionsCount = 0;
 
-        for ( const auto& r : results ) {
-            result.sectionsCount += r.sectionsCount;
-        }
+//         for ( const auto& r : results ) {
+//             result.sectionsCount += r.sectionsCount;
+//         }
 
-        return result;
-    } else {
-        std::cerr << "Error: can't find aggregator for type " << messages::typeToString(type);
-        return {};
-    }
-}
+//         return result;
+//     } else {
+//         std::cerr << "Error: can't find aggregator for type " << messages::typeToString(type);
+//         return {};
+//     }
+// }
 
 int main(int argc, char* argv[]) {
     signal(SIGINT, stop);
@@ -81,13 +81,14 @@ int main(int argc, char* argv[]) {
             }
 
             if ( totalSectionsReceived >= result.totalSections ) {
-                auto aggregated = aggregateResults(taskResults[result.taskId]);
-                if ( aggregated ) {
-                    auto resultJson = aggregated->toJson();
-                    rmq.sendMessage(resultJson, SINKER_QUEUE_NAME);
-                }
+                std::cout << "aboba" << std::endl;
+                // auto aggregated = aggregateResults(taskResults[result.taskId]);
+                // if ( aggregated ) {
+                //     auto resultJson = aggregated->toJson();
+                //     rmq.sendMessage(resultJson, SINKER_QUEUE_NAME);
+                // }
 
-                taskResults.erase(result.taskId);
+                // taskResults.erase(result.taskId);
             }
         }
     }

@@ -12,7 +12,7 @@
 
 static int taskIdCounter = 1;
 
-static void listTexts(pqxx::connection& conn, RabbitMQ&, const std::string&, std::istringstream&) {
+static void listTexts(pqxx::connection& conn) {
     pqxx::work txn(conn);
     
     auto result = txn.exec("SELECT name FROM texts ORDER BY name");
@@ -41,21 +41,8 @@ static std::vector<int> getSectionIds(pqxx::connection& conn, const std::string&
     return sectionIds;
 }
 
-static void createTask(pqxx::connection& dbConn, RabbitMQ& rmq, const std::string& strCmd, std::istringstream& iss) {
+static void createTask(pqxx::connection& dbConn, RabbitMQ& rmq, const std::string& textName) {
     int taskId = taskIdCounter++;
-    auto taskType = messages::stringToType(strCmd);
-
-    std::optional<int64_t> n;
-    if ( taskType == messages::Type::TopN ) {
-        if (std::string strN; (iss >> strN) ) { n = std::stoi(strN); }
-    }
-
-    std::string textName;
-    if ( not (iss >> textName) ) {
-        std::cerr << "Error: Text name is required" << std::endl;
-        return;
-    }
-
     auto sectionIds = getSectionIds(dbConn, textName);
     
     if ( sectionIds.empty()) {
@@ -81,35 +68,22 @@ static void createTask(pqxx::connection& dbConn, RabbitMQ& rmq, const std::strin
     for ( size_t i = 0; i < sectionIds.size(); i += BATCH_SIZE ) {
         messages::TaskMessage msg;
         msg.taskId = taskId;
-        msg.type = taskType;
         msg.totalSections = totalSections;
-        msg.n = n;
-        
+        msg.startTime = ms.count();
         for ( size_t j = i; j < i + BATCH_SIZE and j < sectionIds.size(); ++j ) {
             msg.sectionIds.push_back(sectionIds[j]);
         }
         
+        // std::cout << msg.toJson() << std::endl;
         rmq.sendMessage(msg.toJson(), QUEUE_NAME);
     }
 }
 
 static void printUsage() {
     std::cout << "Usage:" << std::endl;
-    std::cout << "  list                    - List all texts" << std::endl;
-    std::cout << "  words_count <text_name> - Count words in a text" << std::endl;
-    std::cout << "  top_n <text_name>       - Get top N words in a text" << std::endl;
-    std::cout << "  tonality <text_name>    - Get tonality of a text" << std::endl;
-    std::cout << "  sort_sentences <text_name> - Sort sentences in a text" << std::endl;
+    std::cout << "  list        - List all texts" << std::endl;
+    std::cout << "  <text_name> - Start processing a text" << std::endl;
 }
-
-using Command = void(*)(pqxx::connection&, RabbitMQ&, const std::string&, std::istringstream&);
-static const std::unordered_map<std::string, Command> commands = {
-    {"list", listTexts},
-    {"words_count", createTask},
-    {"top_n", createTask},
-    {"tonality", createTask},
-    {"sort_sentences", createTask},
-};
 
 int main() {
     pqxx::connection conn(DB_CONN_STRING);
@@ -135,11 +109,17 @@ int main() {
         std::string cmd;
         iss >> cmd;
 
-        if ( auto it = commands.find(cmd); it != commands.end() ) {
-            it->second(conn, rmq, cmd, iss);
+        if ( cmd == "list" ) {
+            listTexts(conn);
         } else {
-            printUsage();
+            createTask(conn, rmq, cmd);
         }
+
+        // if ( auto it = commands.find(cmd); it != commands.end() ) {
+        //     it->second(conn, rmq, cmd);
+        // } else {
+        //     printUsage();
+        // }
     }
     
     return 0;

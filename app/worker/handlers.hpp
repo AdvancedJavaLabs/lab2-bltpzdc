@@ -4,7 +4,9 @@
 #include <pqxx/pqxx>
 
 #include <algorithm>
+#include <string>
 #include <unordered_set>
+#include <vector>
 
 inline std::vector<std::string> getAllSections(pqxx::connection& conn, const std::vector<int>& sectionIds)
 {
@@ -36,7 +38,7 @@ inline std::vector<std::string> getAllSections(pqxx::connection& conn, const std
 
 namespace handlers {
 
-using handler_t = messages::ResultMessage (*)(pqxx::connection& conn, const messages::TaskMessage&);
+using handler_t = void (*)(const std::vector<std::string>&, messages::ResultMessage&);
 
 inline size_t countWordsInText(const std::string& text)
 {
@@ -61,21 +63,14 @@ inline size_t countWordsInText(const std::string& text)
     return wordCount;
 }
 
-inline messages::ResultMessage countWords(pqxx::connection& conn, const messages::TaskMessage& task)
+inline void countWords(const std::vector<std::string>& sections, messages::ResultMessage& result)
 {
-    size_t totalWords = 0;
-    auto sects = getAllSections(conn, task.sectionIds);
-    
-    for ( const auto& sect : sects ) {
+    size_t totalWords = 0;    
+    for ( const auto& sect : sections ) {
         totalWords += countWordsInText(sect);
     }
     
-    messages::ResultMessage result;
-    result.type = messages::Type::WordsCount;
-    result.result = totalWords;
-    result.sectionsCount = static_cast<int>(task.sectionIds.size());
-    
-    return result;
+    result.wordsCount = totalWords;
 }
 
 inline std::vector<std::string> extractWords(const std::string& text)
@@ -99,20 +94,10 @@ inline std::vector<std::string> extractWords(const std::string& text)
     return words;
 }
 
-inline messages::ResultMessage topN(pqxx::connection& conn, const messages::TaskMessage& task)
-{
-    if ( not task.n or *task.n <= 0 ) {
-        messages::ResultMessage result;
-        result.type = messages::Type::TopN;
-        result.result = std::vector<std::pair<size_t, std::string>>{};
-        result.sectionsCount = static_cast<int>(task.sectionIds.size());
-        return result;
-    }
-    
-    auto sects = getAllSections(conn, task.sectionIds);
-    
+inline void topN(const std::vector<std::string>& sections, messages::ResultMessage& result)
+{   
     std::unordered_map<std::string, size_t> wordCounts;
-    for ( const auto& sect : sects ) {
+    for ( const auto& sect : sections ) {
         auto words = extractWords(sect);
         for ( const auto& word : words ) {
             if ( not word.empty() ) {
@@ -136,17 +121,12 @@ inline messages::ResultMessage topN(pqxx::connection& conn, const messages::Task
             return a.second < b.second;
         });
     
-    size_t n = static_cast<size_t>(*task.n);
+    constexpr size_t n = 1000;
     if ( wordFreq.size() > n ) {
         wordFreq.resize(n);
     }
     
-    messages::ResultMessage result;
-    result.type = messages::Type::TopN;
-    result.result = wordFreq;
-    result.sectionsCount = static_cast<int>(task.sectionIds.size());
-    
-    return result;
+    result.topWords = std::move(wordFreq);
 }
 
 inline std::vector<std::pair<size_t, std::string>> splitSentences(const std::string& text)
@@ -197,7 +177,7 @@ inline std::vector<std::pair<size_t, std::string>> splitSentences(const std::str
     return sentences;
 }
 
-inline messages::ResultMessage tonality(pqxx::connection& conn, const messages::TaskMessage& task)
+inline void tonality(const std::vector<std::string>& sections, messages::ResultMessage& result)
 {
     static const std::unordered_set<std::string> positiveWords = {
         "good", "great", "excellent", "wonderful", "amazing", "fantastic", "beautiful",
@@ -213,12 +193,10 @@ inline messages::ResultMessage tonality(pqxx::connection& conn, const messages::
         "pain", "suffering", "disappointment", "disgust", "horror", "evil", "wrong"
     };
     
-    auto sects = getAllSections(conn, task.sectionIds);
-    
     int positiveCount = 0;
     int negativeCount = 0;
     
-    for ( const auto& sect : sects ) {
+    for ( const auto& sect : sections ) {
         auto words = extractWords(sect);
         for ( const auto& word : words ) {
             if ( positiveWords.find(word) != positiveWords.end() ) {
@@ -229,33 +207,22 @@ inline messages::ResultMessage tonality(pqxx::connection& conn, const messages::
         }
     }
     
-    std::string tonalityResult;
+    int tonalityResult;
     if ( positiveCount > negativeCount * 1.2 ) {
-        tonalityResult = "positive";
+        tonalityResult = 1;
     } else if ( negativeCount > positiveCount * 1.2 ) {
-        tonalityResult = "negative";
+        tonalityResult = -1;
     } else {
-        tonalityResult = "neutral";
+        tonalityResult = 0;
     }
     
-    std::ostringstream resultStr;
-    resultStr << tonalityResult << " (positive: " << positiveCount 
-              << ", negative: " << negativeCount << ")";
-    
-    messages::ResultMessage result;
-    result.type = messages::Type::Tonality;
-    result.result = resultStr.str();
-    result.sectionsCount = static_cast<int>(task.sectionIds.size());
-    
-    return result;
+    result.tonality = tonalityResult;
 }
 
-inline messages::ResultMessage sortSentences(pqxx::connection& conn, const messages::TaskMessage& task)
+inline void sortSentences(const std::vector<std::string>& sections, messages::ResultMessage& result)
 {
-    auto sects = getAllSections(conn, task.sectionIds);
-    
     std::vector<std::pair<size_t, std::string>> allSentences;
-    for ( const auto& sect : sects ) {
+    for ( const auto& sect : sections ) {
         auto sentences = splitSentences(sect);
         allSentences.insert(allSentences.end(), sentences.begin(), sentences.end());
     }
@@ -266,19 +233,11 @@ inline messages::ResultMessage sortSentences(pqxx::connection& conn, const messa
         });
     
     
-    messages::ResultMessage result;
-    result.type = messages::Type::SortSentences;
-    result.result = std::move(allSentences);
-    result.sectionsCount = static_cast<int>(task.sectionIds.size());
-    
-    return result;
+    result.sortedSentences = std::move(allSentences);
 }
 
-static inline const std::unordered_map<messages::Type, handler_t> handlers = {
-    { messages::Type::WordsCount, countWords },
-    { messages::Type::TopN, topN },
-    { messages::Type::Tonality, tonality },
-    { messages::Type::SortSentences, sortSentences },
+static inline const std::vector<handler_t> handlers = {
+    countWords, topN, tonality, sortSentences,
 };
     
 }
