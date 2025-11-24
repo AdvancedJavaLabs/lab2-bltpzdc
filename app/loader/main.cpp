@@ -8,40 +8,150 @@
 
 namespace fs = std::filesystem;
 
-std::vector<std::string> splitByParagraphs(const std::string& content) {
-    std::vector<std::string> paragraphs;
-    std::string current;
+std::string sanitizeUTF8(const std::string& input) {
+    std::string output;
+    output.reserve(input.size());
     
-    for ( size_t i = 0; i < content.length(); ++i ) {
-        if ( i < content.length() - 1 and content[i] == '\n' and content[i + 1] == '\n') {
-            std::string trimmed = current;
-            size_t first = trimmed.find_first_not_of(" \t\n\r");
-
-            if ( first != std::string::npos ) {
-                trimmed = trimmed.substr(first);
-                size_t last = trimmed.find_last_not_of(" \t\n\r");
-                if ( last != std::string::npos ) { trimmed = trimmed.substr(0, last + 1); }
-                if ( not trimmed.empty() ) { paragraphs.push_back(trimmed); }
+    for (size_t i = 0; i < input.size(); ++i) {
+        unsigned char c = static_cast<unsigned char>(input[i]);
+        
+        // ASCII character (0x00-0x7F)
+        if (c <= 0x7F) {
+            output += c;
+        }
+        // Start of 2-byte UTF-8 sequence (0xC2-0xDF)
+        else if (c >= 0xC2 && c <= 0xDF) {
+            if (i + 1 < input.size()) {
+                unsigned char c2 = static_cast<unsigned char>(input[i + 1]);
+                if (c2 >= 0x80 && c2 <= 0xBF) {
+                    output += c;
+                    output += c2;
+                    ++i;
+                } else {
+                    // Invalid continuation byte, replace with space
+                    output += ' ';
+                }
+            } else {
+                // Incomplete sequence, replace with space
+                output += ' ';
             }
-            current.clear();
-            ++i;
-        } else {
-            current += content[i];
+        }
+        // Start of 3-byte UTF-8 sequence (0xE0-0xEF)
+        else if (c >= 0xE0 && c <= 0xEF) {
+            if (i + 2 < input.size()) {
+                unsigned char c2 = static_cast<unsigned char>(input[i + 1]);
+                unsigned char c3 = static_cast<unsigned char>(input[i + 2]);
+                if (c2 >= 0x80 && c2 <= 0xBF && c3 >= 0x80 && c3 <= 0xBF) {
+                    // Check for overlong encoding
+                    if (!(c == 0xE0 && c2 < 0xA0) && !(c == 0xED && c2 > 0x9F)) {
+                        output += c;
+                        output += c2;
+                        output += c3;
+                        i += 2;
+                    } else {
+                        output += ' ';
+                    }
+                } else {
+                    // Invalid continuation bytes, replace with space
+                    output += ' ';
+                }
+            } else {
+                // Incomplete sequence, replace with space
+                output += ' ';
+            }
+        }
+        // Start of 4-byte UTF-8 sequence (0xF0-0xF4)
+        else if (c >= 0xF0 && c <= 0xF4) {
+            if (i + 3 < input.size()) {
+                unsigned char c2 = static_cast<unsigned char>(input[i + 1]);
+                unsigned char c3 = static_cast<unsigned char>(input[i + 2]);
+                unsigned char c4 = static_cast<unsigned char>(input[i + 3]);
+                if (c2 >= 0x80 && c2 <= 0xBF && c3 >= 0x80 && c3 <= 0xBF && 
+                    c4 >= 0x80 && c4 <= 0xBF) {
+                    // Check for overlong encoding and invalid ranges
+                    if (!(c == 0xF0 && c2 < 0x90) && !(c == 0xF4 && c2 > 0x8F)) {
+                        output += c;
+                        output += c2;
+                        output += c3;
+                        output += c4;
+                        i += 3;
+                    } else {
+                        output += ' ';
+                    }
+                } else {
+                    // Invalid continuation bytes, replace with space
+                    output += ' ';
+                }
+            } else {
+                // Incomplete sequence, replace with space
+                output += ' ';
+            }
+        }
+        // Invalid UTF-8 byte (0x80-0xBF without leading byte, 0xC0-0xC1, 0xF5-0xFF)
+        else {
+            // Replace invalid bytes with space
+            output += ' ';
         }
     }
     
-    if ( not current.empty() ) {
-        std::string trimmed = current;
-        size_t first = trimmed.find_first_not_of(" \t\n\r");
-        if ( first != std::string::npos ) {
-            trimmed = trimmed.substr(first);
-            size_t last = trimmed.find_last_not_of(" \t\n\r");
-            if ( last != std::string::npos ) { trimmed = trimmed.substr(0, last + 1); }
-            if ( not trimmed.empty() ) { paragraphs.push_back(trimmed); }
-        }
+    return output;
+}
+
+// Check if a byte is a continuation byte in UTF-8
+inline bool isUTF8Continuation(unsigned char c) {
+    return (c >= 0x80 && c <= 0xBF);
+}
+
+// Find the start of the current UTF-8 character by going backwards
+size_t findUTF8CharStart(const std::string& str, size_t pos) {
+    if (pos == 0) return 0;
+    
+    // Go backwards until we find a non-continuation byte
+    size_t start = pos;
+    while (start > 0 && isUTF8Continuation(static_cast<unsigned char>(str[start]))) {
+        --start;
     }
     
-    return paragraphs;
+    // Check if this is a valid UTF-8 start byte
+    unsigned char c = static_cast<unsigned char>(str[start]);
+    if (c <= 0x7F) {
+        // ASCII
+        return start;
+    } else if (c >= 0xC2 && c <= 0xDF) {
+        // 2-byte sequence
+        return start;
+    } else if (c >= 0xE0 && c <= 0xEF) {
+        // 3-byte sequence
+        return start;
+    } else if (c >= 0xF0 && c <= 0xF4) {
+        // 4-byte sequence
+        return start;
+    }
+    
+    // Invalid byte, just return the position
+    return pos;
+}
+
+std::vector<std::string> splitByChunks(const std::string& content, size_t chunkSize = 1024) {
+    std::vector<std::string> chunks;
+    
+    for ( size_t i = 0; i < content.length(); ) {
+        size_t end = std::min(i + chunkSize, content.length());
+        
+        // If we're not at the end of the string, make sure we don't split in the middle of a UTF-8 character
+        if (end < content.length()) {
+            // Check if the byte at 'end' is a continuation byte
+            if (isUTF8Continuation(static_cast<unsigned char>(content[end]))) {
+                // Find the start of this UTF-8 character and adjust 'end' to before it
+                end = findUTF8CharStart(content, end);
+            }
+        }
+        
+        chunks.push_back(content.substr(i, end - i));
+        i = end;
+    }
+    
+    return chunks;
 }
 
 std::string readTextFile(const std::string& filePath) {
@@ -120,7 +230,10 @@ int main(int argc, char* argv[]) {
         try {
             std::string content = readTextFile(filePath);
             
-            std::vector<std::string> sections = splitByParagraphs(content);
+            // Sanitize UTF-8 to remove invalid sequences
+            content = sanitizeUTF8(content);
+            
+            std::vector<std::string> sections = splitByChunks(content, 1024);
             
             insertTextAndSections(conn, textName, sections);
         } catch ( const std::exception& e ) {
