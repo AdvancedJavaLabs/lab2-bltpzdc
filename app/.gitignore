@@ -1,0 +1,12 @@
+.vscode/
+build/
+.cache/
+texts/
+
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.ninja
+compile_commands.json
+
