@@ -46,6 +46,7 @@ struct ResultMessage {
     int sectionsCount{0};
     int totalSections{0};
     long startTime{0};
+    long endTime{0};
 
     size_t wordsCount{0};
     std::vector<std::pair<size_t, std::string>> topWords;
@@ -61,6 +62,7 @@ struct ResultMessage {
         json["sections_count"] = sectionsCount;
         json["total_sections"] = totalSections;
         json["start_time"] = startTime;
+        json["end_time"] = endTime;
 
         json["words_count"] = wordsCount;
 
@@ -88,6 +90,7 @@ struct ResultMessage {
         r.sectionsCount = json.value("sections_count", 0);
         r.totalSections = json.value("total_sections", 0);
         r.startTime = json.value("start_time", 0L);
+        r.endTime = json.value("end_time", 0L);
 
         r.wordsCount = json.value("words_count", 0);
 

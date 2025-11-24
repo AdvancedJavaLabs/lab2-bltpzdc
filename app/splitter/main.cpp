@@ -59,8 +59,8 @@ static void createTask(pqxx::connection& dbConn, RabbitMQ& rmq, const std::strin
     std::ostringstream timeStr;
     timeStr << std::put_time(tmPtr, "%Y-%m-%d %H:%M:%S");
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-        startTime.time_since_epoch()) % 1000;
-    timeStr << "." << std::setfill('0') << std::setw(3) << ms.count();
+        startTime.time_since_epoch()).count();
+    timeStr << "." << std::setfill('0') << std::setw(3) << ms % 1'000;
     
     std::cout << "[TASK START] Task " << taskId << " started at " << timeStr.str() 
               << " for text: " << textName << std::endl;
@@ -69,7 +69,7 @@ static void createTask(pqxx::connection& dbConn, RabbitMQ& rmq, const std::strin
         messages::TaskMessage msg;
         msg.taskId = taskId;
         msg.totalSections = totalSections;
-        msg.startTime = ms.count();
+        msg.startTime = ms;
         for ( size_t j = i; j < i + BATCH_SIZE and j < sectionIds.size(); ++j ) {
             msg.sectionIds.push_back(sectionIds[j]);
         }

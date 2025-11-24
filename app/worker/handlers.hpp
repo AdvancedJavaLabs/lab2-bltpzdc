@@ -236,8 +236,42 @@ inline void sortSentences(const std::vector<std::string>& sections, messages::Re
     result.sortedSentences = std::move(allSentences);
 }
 
+inline void replaceWords(const std::vector<std::string>& sections, messages::ResultMessage& result)
+{
+    std::string output;
+    output.reserve( sections.size() * 1024 );
+
+    const std::string from = "Natasha";
+    const std::string to   = "Rzhevsky";
+
+    for (const auto& sec : sections)
+    {
+        std::string tmp;
+        tmp.reserve(sec.size());
+
+        size_t start = 0;
+        while (true)
+        {
+            size_t pos = sec.find(from, start);
+            if (pos == std::string::npos) {
+                tmp.append(sec, start, std::string::npos);
+                break;
+            }
+
+            tmp.append(sec, start, pos - start);
+            tmp += to;
+            start = pos + from.size();
+        }
+
+        output += tmp;
+    }
+
+    result.replacedText = std::move(output);
+}
+
+
 static inline const std::vector<handler_t> handlers = {
-    countWords, topN, tonality, sortSentences,
+    countWords, topN, tonality, sortSentences, replaceWords,
 };
     
 }

@@ -1,9 +1,11 @@
+#include <chrono>
 #include <iostream>
 #include <csignal>
 #include <algorithm>
 #include <sstream>
 
 // #include "aggregators.hpp"
+#include "aggregators.hpp"
 #include "constants.hpp"
 #include "messages.hpp"
 #include "rabbitmq.hpp"
@@ -81,14 +83,16 @@ int main(int argc, char* argv[]) {
             }
 
             if ( totalSectionsReceived >= result.totalSections ) {
-                std::cout << "aboba" << std::endl;
-                // auto aggregated = aggregateResults(taskResults[result.taskId]);
-                // if ( aggregated ) {
-                //     auto resultJson = aggregated->toJson();
-                //     rmq.sendMessage(resultJson, SINKER_QUEUE_NAME);
-                // }
+                messages::ResultMessage total;
+                total.taskId = result.taskId;
+                total.totalSections = result.totalSections;
+                total.startTime = result.startTime;
 
-                // taskResults.erase(result.taskId);
+                for ( auto aggregator : aggregators::aggregators ) {
+                    aggregator(taskResults[result.taskId], total);
+                }
+
+                rmq.sendMessage(result.toJson(), SINKER_QUEUE_NAME);
             }
         }
     }
